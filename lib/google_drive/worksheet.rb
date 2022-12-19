@@ -61,6 +61,7 @@ module GoogleDrive
       @cells = nil
       @input_values = nil
       @numeric_values = nil
+      @effective_formats = nil
       @modified = Set.new
       @list = nil
       @v4_requests = []
@@ -248,6 +249,19 @@ module GoogleDrive
       @numeric_values[[row, col]]
     end
 
+    # Returns the effective format of the cell. Arguments must be either
+    # (row number, column number) or cell name. Top-left cell is [1, 1].
+    #
+    # If user input "=A1+B1" to cell [1, 3]:
+    #   worksheet[1, 3]              #=> "3" for example
+    #   worksheet.effective_format(1, 3)  #=> instance of Google::Apis::SheetsV4::CellFormat, see https://googleapis.dev/ruby/google-api-client/latest/Google/Apis/SheetsV4/CellFormat.html 
+    def effective_format(*args)
+      (row, col) = parse_cell_args(args)
+      reload_cells unless @cells
+      @effective_formats[[row, col]] || Google::Apis::SheetsV4::CellFormat.new
+    end
+
+
     # Row number of the bottom-most non-empty row.
     def num_rows
       reload_cells unless @cells
@@ -388,7 +402,7 @@ module GoogleDrive
           ranges: "'%s'" % @title,
           fields:
             'sheets(properties,data.rowData.values' \
-            '(formattedValue,userEnteredValue,effectiveValue))'
+            '(formattedValue,userEnteredValue,effectiveValue,effectiveFormat))'
         )
       api_sheet = api_spreadsheet.sheets[0]
       set_properties(api_sheet.properties)
@@ -682,7 +696,7 @@ module GoogleDrive
           @session.sheets_service.get_spreadsheet(
               spreadsheet.id,
               ranges: "'%s'" % @remote_title,
-              fields: 'sheets.data.rowData.values(formattedValue,userEnteredValue,effectiveValue)'
+              fields: 'sheets.data.rowData.values(formattedValue,userEnteredValue,effectiveValue,effectiveFormat)'
           )
       update_cells_from_api_sheet(response.sheets[0])
     end
@@ -695,6 +709,7 @@ module GoogleDrive
       @cells = {}
       @input_values = {}
       @numeric_values = {}
+      @effective_formats = {}
 
       rows_data.each_with_index do |row_data, r|
         next if !row_data.values
@@ -706,6 +721,7 @@ module GoogleDrive
           @numeric_values[k] =
               cell_data.effective_value && cell_data.effective_value.number_value ?
                   cell_data.effective_value.number_value.to_f : nil
+          @effective_formats[k] = cell_data.effective_format
         end
       end
 
